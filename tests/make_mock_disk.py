@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-make_mock_disk.py: Generates synthetic raw .img disk datasets containing valid file signatures (JPEG, PNG, PDF, ZIP),
+make_mock_disk.py: Generates synthetic raw .img disk datasets containing valid file signatures (JPEG, PNG, PDF, ZIP, MP4, SQLite),
 slack space, and unallocated sector padding for testing sanitization and carving algorithms.
 """
 
@@ -12,12 +12,13 @@ import argparse
 SECTOR_SIZE = 512
 
 def build_valid_jpeg() -> bytes:
-    """Construct minimal valid JPEG byte stream."""
-    # SOI + App0 marker + DQT + SOF0 + SOS + compressed data + EOI
+    """Construct minimal valid JPEG byte stream with SOI, APP0, DQT, SOS, and EOI."""
     soi = b"\xFF\xD8"
     app0 = b"\xFF\xE0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
+    dqt = b"\xFF\xDB\x00\x43" + (b"\x01" * 67)
+    sos = b"\xFF\xDA\x00\x08\x01\x01\x00\x00\x3F\x00" + b"\x00"  # Start of Scan + payload
     eoi = b"\xFF\xD9"
-    return soi + app0 + b"\xFF\xDB\x00\x43" + (b"\x01" * 67) + eoi
+    return soi + app0 + dqt + sos + eoi
 
 def build_valid_png() -> bytes:
     """Construct minimal valid PNG byte stream with correct CRC checksums."""
@@ -52,7 +53,32 @@ def build_valid_zip() -> bytes:
     eocd = b"PK\x05\x06\x00\x00\x00\x00\x01\x00\x01\x00\x37\x00\x00\x00\x1E\x00\x00\x00\x00\x00"
     return local_header + central_dir + eocd
 
-def generate_mock_disk(output_path: str, size_mb: int = 5):
+def build_valid_mp4() -> bytes:
+    """Construct minimal valid MP4 stream with ftyp and moov boxes."""
+    ftyp_box = struct.pack(">I", 16) + b"ftypisom" + b"\x00\x00\x02\x00"
+    moov_box = struct.pack(">I", 8) + b"moov"
+    return ftyp_box + moov_box
+
+def build_valid_sqlite() -> bytes:
+    """Construct minimal valid SQLite database with valid header and B-tree page byte at offset 100."""
+    header = b"SQLite format 3\x00"            # 16 bytes (offsets 0..15)
+    page_size = struct.pack(">H", 4096)        # 2 bytes (offsets 16..17)
+    file_format = b"\x01\x01" + b"\x00" * 8   # 10 bytes (offsets 18..27)
+    page_count = struct.pack(">I", 2)          # 4 bytes (offsets 28..31)
+    padding = b"\x00" * 24                     # 24 bytes (offsets 32..55)
+    encoding = struct.pack(">I", 1)            # 4 bytes (offsets 56..59)
+    rest_header = b"\x00" * 40                 # 40 bytes (offsets 60..99)
+    btree_leaf_flag = b"\x0D"                  # Offset 100: Table Leaf Page marker
+    
+    total_hdr = header + page_size + file_format + page_count + padding + encoding + rest_header + btree_leaf_flag
+    remaining_bytes = (4096 * 2) - len(total_hdr)
+    return total_hdr + (b"\x00" * remaining_bytes)
+
+def build_corrupt_header() -> bytes:
+    """Construct corrupt header to verify false-positive elimination."""
+    return b"\xFF\xD8\xFF\x00CORRUPTED_HEADER_DATA_NO_EOI" + (b"\xFF" * 100)
+
+def generate_mock_disk(output_path: str, size_mb: int = 2):
     """Generate raw disk image populated with synthetic file structures placed at sector boundaries."""
     total_bytes = size_mb * 1024 * 1024
     total_sectors = total_bytes // SECTOR_SIZE
@@ -73,6 +99,15 @@ def generate_mock_disk(output_path: str, size_mb: int = 5):
 
     # Sector 30: ZIP file
     write_at_sector(30, build_valid_zip())
+
+    # Sector 40: MP4 file
+    write_at_sector(40, build_valid_mp4())
+
+    # Sector 50: SQLite DB
+    write_at_sector(50, build_valid_sqlite())
+
+    # Sector 70: Corrupt false-positive header
+    write_at_sector(70, build_corrupt_header())
 
     with open(output_path, "wb") as f:
         f.write(disk_data)

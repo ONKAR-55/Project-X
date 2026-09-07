@@ -1,79 +1,56 @@
 """
-MainWindow: PyQt6 desktop application layout combining Dashboard and Hex Viewer.
+MainWindow: PyQt6 desktop application container managing separate operational windows:
+- Mode Selection Landing View
+- Dedicated Forensic Data Recovery Window
+- Dedicated Secure Data Erasure Window
 """
 
-from PyQt6.QtWidgets import QMainWindow, QTabWidget, QVBoxLayout, QWidget, QStatusBar, QMessageBox
-from ui.dashboard import DashboardWidget
-from ui.hex_viewer import HexViewerWidget
-from core.audit_logger import AuditLogger
+from PyQt6.QtWidgets import QMainWindow, QStackedWidget, QWidget, QVBoxLayout, QStatusBar
+from ui.mode_selector import ModeSelectorWidget
+from ui.recovery_window import RecoveryWindowWidget
+from ui.erasure_window import ErasureWindowWidget
 
 class MainWindow(QMainWindow):
-    """Main desktop interface window for Project-X."""
+    """Main application container window managing separate recovery and erasure modes."""
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Project-X: Enterprise Data Sanitization & Forensic Suite")
-        self.resize(1024, 768)
-
-        self.audit_logger = AuditLogger()
+        self.setWindowTitle("Project-X: Digital Forensics & Secure Sanitization Suite")
+        self.resize(1150, 820)
         self.init_ui()
 
     def init_ui(self):
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout()
-        central_widget.setLayout(main_layout)
+        self.stack = QStackedWidget()
+        self.setCentralWidget(self.stack)
 
-        self.tabs = QTabWidget()
-        main_layout.addWidget(self.tabs)
+        # Screen 0: Mode Selection Landing
+        self.mode_selector = ModeSelectorWidget()
+        self.mode_selector.recovery_selected.connect(self.show_recovery_window)
+        self.mode_selector.erasure_selected.connect(self.show_erasure_window)
+        self.stack.addWidget(self.mode_selector)
 
-        self.dashboard = DashboardWidget()
-        self.tabs.addTab(self.dashboard, "Operations Dashboard")
+        # Screen 1: Dedicated Recovery Window
+        self.recovery_window = RecoveryWindowWidget()
+        self.recovery_window.back_to_menu.connect(self.show_mode_selector)
+        self.stack.addWidget(self.recovery_window)
 
-        self.hex_viewer = HexViewerWidget()
-        self.tabs.addTab(self.hex_viewer, "Sector Hex Inspector")
+        # Screen 2: Dedicated Erasure Window
+        self.erasure_window = ErasureWindowWidget()
+        self.erasure_window.back_to_menu.connect(self.show_mode_selector)
+        self.stack.addWidget(self.erasure_window)
 
-        # Connect Dashboard Signals
-        self.dashboard.wipe_requested.connect(self.handle_wipe)
-        self.dashboard.scan_requested.connect(self.handle_scan)
+        self.statusBar().showMessage("Ready - Select operational mode")
 
-        self.statusBar().showMessage("Ready")
+    def show_mode_selector(self):
+        self.stack.setCurrentWidget(self.mode_selector)
+        self.statusBar().showMessage("Main Menu - Select operational mode")
 
-    def handle_wipe(self, drive_path: str, method: str):
-        reply = QMessageBox.question(
-            self, "Confirm Disk Wipe",
-            f"WARNING: Sanitization using method '{method}' will overwrite data on '{drive_path}'. Proceed?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            self.dashboard.append_log(f"Starting wipe pass on {drive_path} with {method}...")
-            try:
-                from phase1_eraser.block_overwriter import BlockOverwriter
-                overwriter = BlockOverwriter(drive_path)
-                overwriter.wipe(method=method, progress_callback=self.dashboard.set_progress)
-                self.dashboard.append_log("Sanitization complete!")
-                self.audit_logger.log_event("WIPE_COMPLETE", {"target": drive_path, "method": method, "status": "SUCCESS"})
-                self.statusBar().showMessage("Wipe operation completed.")
-            except Exception as e:
-                self.dashboard.append_log(f"Error during wipe: {e}")
-                self.audit_logger.log_event("WIPE_ERROR", {"target": drive_path, "error": str(e), "status": "FAILED"})
+    def show_recovery_window(self):
+        self.stack.setCurrentWidget(self.recovery_window)
+        self.statusBar().showMessage("Forensic Data Recovery Engine Active")
 
-    def handle_scan(self, drive_path: str):
-        self.dashboard.append_log(f"Starting forensic scan on {drive_path}...")
-        try:
-            from phase2_carver.sector_scanner import SectorScanner
-            scanner = SectorScanner(drive_path)
-            results = scanner.scan()
-            self.dashboard.append_log(f"Found {len(results)} potential files.")
-            for r in results:
-                self.dashboard.append_log(f" - [{r['type']}] Sector {r['sector']} (Size: {r['size_bytes']} bytes, Score: {r['confidence_score']}%)")
+    def show_erasure_window(self):
+        self.stack.setCurrentWidget(self.erasure_window)
+        self.statusBar().showMessage("Secure Data Erasure Engine Active")
 
-            # Load first sector into hex viewer if data exists
-            if results and "data" in results[0]:
-                self.hex_viewer.load_data(results[0]["data"][:512])
 
-            self.audit_logger.log_event("SCAN_COMPLETE", {"target": drive_path, "found": len(results), "status": "SUCCESS"})
-            self.statusBar().showMessage(f"Scan finished. Found {len(results)} files.")
-        except Exception as e:
-            self.dashboard.append_log(f"Error during scan: {e}")
-            self.audit_logger.log_event("SCAN_ERROR", {"target": drive_path, "error": str(e), "status": "FAILED"})

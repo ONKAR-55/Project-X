@@ -36,7 +36,6 @@ def test_nist_800_88_wipe(mock_disk):
     overwriter.wipe(method="nist_800_88")
     
     entropy = calculate_file_entropy(mock_disk)
-    # NIST pseudorandom pass should result in high entropy (> 7.5)
     assert entropy > 7.5
 
 def test_dod_5220_3pass_wipe(mock_disk):

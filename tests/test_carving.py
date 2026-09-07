@@ -8,10 +8,14 @@ from phase2_carver.parsers.jpeg_parser import JPEGParser
 from phase2_carver.parsers.png_parser import PNGParser
 from phase2_carver.parsers.pdf_parser import PDFParser
 from phase2_carver.parsers.zip_parser import ZIPParser
+from phase2_carver.parsers.mp4_parser import MP4Parser
+from phase2_carver.parsers.sqlite_parser import SQLiteParser
 from phase2_carver.validator import CarveValidator
+from phase2_carver.classifier import ArtifactClassifier
+from core.entropy import classify_entropy, calculate_entropy
 from tests.make_mock_disk import (
     generate_mock_disk, build_valid_jpeg, build_valid_png,
-    build_valid_pdf, build_valid_zip
+    build_valid_pdf, build_valid_zip, build_valid_mp4, build_valid_sqlite
 )
 
 @pytest.fixture
@@ -52,12 +56,41 @@ def test_zip_parser():
     assert res["metadata"]["format"] == "ZIP"
     assert res["metadata"]["local_files_count"] == 1
 
+def test_mp4_parser():
+    parser = MP4Parser()
+    valid_data = build_valid_mp4()
+    res = parser.parse(valid_data)
+    assert res["valid"] is True
+    assert res["metadata"]["format"] == "MP4"
+
+def test_sqlite_parser():
+    parser = SQLiteParser()
+    valid_data = build_valid_sqlite()
+    res = parser.parse(valid_data)
+    assert res["valid"] is True
+    assert res["metadata"]["format"] == "SQLITE"
+    assert res["metadata"]["page_size"] == 4096
+
+def test_entropy_classification():
+    zeroes = b"\x00" * 512
+    low_ent = calculate_entropy(zeroes)
+    assert low_ent == 0.0
+    assert "Low" in classify_entropy(low_ent)
+
 def test_carve_validator():
     validator = CarveValidator()
     png_data = build_valid_png()
     png_res = PNGParser().parse(png_data)
     score = validator.calculate_confidence("PNG", png_data, png_res)
     assert score >= 90.0
+
+def test_artifact_classifier():
+    classifier = ArtifactClassifier()
+    assert classifier.classify("JPEG") == "Images"
+    assert classifier.classify("PDF") == "Documents"
+    assert classifier.classify("ZIP") == "Archives"
+    assert classifier.classify("SQLITE") == "System Databases"
+    assert classifier.classify("MP4") == "Media Streams"
 
 def test_sector_scanner(mock_disk):
     scanner = SectorScanner(mock_disk)
@@ -68,6 +101,10 @@ def test_sector_scanner(mock_disk):
     assert "PNG" in types_found
     assert "PDF" in types_found
     assert "ZIP" in types_found
+    assert "MP4" in types_found
+    assert "SQLITE" in types_found
 
     for r in results:
         assert r["confidence_score"] > 50.0
+        assert "sha256" in r
+        assert len(r["sha256"]) == 64

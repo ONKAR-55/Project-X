@@ -69,7 +69,14 @@ class AuditLogger:
             return None
 
         os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
-        doc = SimpleDocTemplate(file_path, pagesize=letter)
+        doc = SimpleDocTemplate(
+            file_path, 
+            pagesize=letter,
+            leftMargin=36,
+            rightMargin=36,
+            topMargin=36,
+            bottomMargin=36
+        )
         styles = getSampleStyleSheet()
         elements = []
 
@@ -80,22 +87,26 @@ class AuditLogger:
         elements.append(Paragraph(f"<b>HMAC-SHA256 Signature:</b> <font size=7>{self.compute_signature()}</font>", styles['Normal']))
         elements.append(Spacer(1, 18))
 
-        # Build table of logged events
-        table_data = [["Timestamp", "Event Type", "Target", "Status"]]
+        # Build table of logged events / carved artifacts
+        table_data = [["Timestamp", "Type / Event", "Offset / Target", "Score / Status", "SHA-256 Hash"]]
         for entry in self.entries:
             ts = entry["timestamp"]
             etype = entry["event_type"]
-            target = str(entry["details"].get("target", "N/A"))[:30]
-            status = str(entry["details"].get("status", "SUCCESS"))
-            table_data.append([ts, etype, target, status])
+            details = entry.get("details", {})
+            
+            target = str(details.get("target", details.get("offset", "N/A")))[:20]
+            status = str(details.get("status", f"Score: {details.get('confidence_score', 'N/A')}%"))[:18]
+            file_hash = str(details.get("sha256", "N/A"))[:16] + "..." if details.get("sha256") else "N/A"
+            table_data.append([ts, etype, target, status, file_hash])
 
-        t = Table(table_data)
+        t = Table(table_data, colWidths=[100, 100, 100, 100, 120])
         t.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1E293B')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
         ]))
         elements.append(t)
@@ -103,6 +114,7 @@ class AuditLogger:
         doc.build(elements)
         logger.info(f"Exported PDF audit report to {file_path}")
         return file_path
+
 
     @staticmethod
     def verify_report(json_report_path: str, secret_key: bytes = b"ProjectX_Default_HMAC_Secret_2026") -> bool:

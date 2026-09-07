@@ -1,6 +1,6 @@
 """
 PNGParser: Structure-aware parser for PNG files.
-Validates PNG header magic (89 PNG \r \n 1A \n), chunk length headers, chunk types (IHDR, IDAT, IEND), and CRC32 checksums.
+Validates PNG header magic, sequential chunk headers (IHDR first), chunk CRC32 checksums, and IEND trailer.
 """
 
 import zlib
@@ -13,6 +13,7 @@ class PNGParser:
     PNG_HEADER = b"\x89PNG\r\n\x1A\n"
 
     def parse(self, stream: bytes) -> Dict[str, Any]:
+        """Traverse PNG chunk sequence and verify checksums."""
         if not stream.startswith(self.PNG_HEADER):
             return {"valid": False, "length": 0, "metadata": {}}
 
@@ -22,11 +23,18 @@ class PNGParser:
 
         valid_crc_count = 0
         invalid_crc_count = 0
+        first_chunk = True
 
         while offset + 12 <= stream_len:
             length = struct.unpack(">I", stream[offset:offset+4])[0]
             chunk_type = stream[offset+4:offset+8]
-            
+
+            # Enforce PNG spec: IHDR must be the first chunk
+            if first_chunk:
+                if chunk_type != b"IHDR":
+                    return {"valid": False, "length": 0, "metadata": {"error": "First chunk is not IHDR"}}
+                first_chunk = False
+
             chunk_data_start = offset + 8
             chunk_data_end = chunk_data_start + length
 
@@ -35,8 +43,8 @@ class PNGParser:
 
             chunk_data = stream[chunk_data_start:chunk_data_end]
             expected_crc = struct.unpack(">I", stream[chunk_data_end:chunk_data_end+4])[0]
-            
-            # CRC calculation over Chunk Type + Chunk Data
+
+            # Compute CRC32 over Chunk Type + Chunk Data
             calc_crc = zlib.crc32(chunk_type + chunk_data) & 0xFFFFFFFF
 
             if calc_crc == expected_crc:
@@ -44,7 +52,8 @@ class PNGParser:
             else:
                 invalid_crc_count += 1
 
-            chunks.append(chunk_type.decode("ascii", errors="ignore"))
+            chunk_name = chunk_type.decode("ascii", errors="ignore")
+            chunks.append(chunk_name)
             offset = chunk_data_end + 4
 
             if chunk_type == b"IEND":
