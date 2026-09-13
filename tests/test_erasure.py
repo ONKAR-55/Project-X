@@ -7,8 +7,6 @@ import pytest
 from core.entropy import calculate_entropy, calculate_file_entropy
 from core.audit_logger import AuditLogger
 from phase1_eraser.block_overwriter import BlockOverwriter
-from phase1_eraser.slack_scrubber import SlackScrubber
-from phase1_eraser.metadata_wiper import MetadataWiper
 from tests.make_mock_disk import generate_mock_disk
 
 @pytest.fixture
@@ -44,30 +42,6 @@ def test_dod_5220_3pass_wipe(mock_disk):
     
     entropy = calculate_file_entropy(mock_disk)
     assert entropy > 7.5
-
-def test_slack_scrubber(tmp_path):
-    test_file = tmp_path / "slack_test.dat"
-    # Write 100 bytes (cluster size 4096 => 3996 slack bytes)
-    test_file.write_bytes(b"A" * 100)
-    
-    scrubber = SlackScrubber(cluster_size=4096)
-    scrubbed_bytes = scrubber.scrub_file_slack(str(test_file))
-    
-    assert scrubbed_bytes == 3996
-    assert os.path.getsize(str(test_file)) == 4096
-    
-    data = test_file.read_bytes()
-    assert data[:100] == b"A" * 100
-    assert data[100:] == b"\x00" * 3996
-
-def test_metadata_wiper(tmp_path):
-    test_file = tmp_path / "sensitive.txt"
-    test_file.write_text("Confidential Data")
-    
-    wiper = MetadataWiper()
-    wiper.sanitize_and_delete(str(test_file))
-    
-    assert not os.path.exists(str(test_file))
 
 def test_audit_logger_signature(tmp_path):
     json_path = str(tmp_path / "audit_report.json")

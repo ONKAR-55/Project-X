@@ -4,6 +4,5 @@ Implements raw physical sector scanning, structure-aware file format chunk parse
 """
 
 from phase2_carver.sector_scanner import SectorScanner
-from phase2_carver.validator import CarveValidator
 
-__all__ = ["SectorScanner", "CarveValidator"]
+__all__ = ["SectorScanner"]

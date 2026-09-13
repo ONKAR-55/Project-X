@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QLineEdit, QComboBox, QPushButton, QProgressBar, QTextEdit, QFileDialog
 )
 from PyQt6.QtCore import pyqtSignal
-from core.disk_io import is_admin_or_root, is_system_partition, DiskIO
+from core.disk_io import is_admin_or_root, is_system_partition
 
 class DashboardWidget(QWidget):
     """PyQt6 Dashboard for drive selection, privilege badges, and engine execution controls."""

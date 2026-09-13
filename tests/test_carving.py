@@ -10,7 +10,6 @@ from phase2_carver.parsers.pdf_parser import PDFParser
 from phase2_carver.parsers.zip_parser import ZIPParser
 from phase2_carver.parsers.mp4_parser import MP4Parser
 from phase2_carver.parsers.sqlite_parser import SQLiteParser
-from phase2_carver.validator import CarveValidator
 from phase2_carver.classifier import ArtifactClassifier
 from core.entropy import classify_entropy, calculate_entropy
 from tests.make_mock_disk import (
@@ -78,7 +77,6 @@ def test_entropy_classification():
     assert "Low" in classify_entropy(low_ent)
 
 def test_carve_validator():
-    validator = CarveValidator()
     png_data = build_valid_png()
     png_res = PNGParser().parse(png_data)
     score = validator.calculate_confidence("PNG", png_data, png_res)

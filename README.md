@@ -17,7 +17,6 @@ Project-X/
 ├── phase1_eraser/         # YOUR WORKSPACE: Data Sanitization Engine
 │   ├── __init__.py
 │   ├── block_overwriter.py # NIST 800-88 / DoD 5220.22-M multi-pass overwriting
-│   ├── slack_scrubber.py  # File slack space cluster boundary zeroing
 │   ├── metadata_wiper.py  # MFT record & Inode metadata obfuscation
 │   └── direct_flusher.py  # Low-level OS buffer bypass (O_DIRECT / FlushFileBuffers)
 │
