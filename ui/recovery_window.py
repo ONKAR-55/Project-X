@@ -13,7 +13,6 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import pyqtSignal, Qt, QThread
 from phase2_carver.sector_scanner import SectorScanner
-from phase2_carver.recovery_engine import BatchRecoveryEngine
 from ui.hex_viewer import HexViewerWidget
 from ui.gallery import GalleryWidget
 from core.audit_logger import AuditLogger

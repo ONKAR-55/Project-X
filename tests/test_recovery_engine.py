@@ -4,11 +4,7 @@ test_recovery_engine.py: Unit tests for batch recovery extraction and directory 
 
 import os
 import pytest
-try:
-    from phase2_carver.batch_recovery import BatchRecoveryEngine
-except ImportError:
-    from phase2_carver.recovery_engine import BatchRecoveryEngine
-
+from phase2_carver.batch_recovery import BatchRecoveryEngine
 from phase2_carver.sector_scanner import SectorScanner
 from tests.make_mock_disk import build_valid_jpeg, build_valid_png, build_valid_pdf
 

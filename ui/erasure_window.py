@@ -9,7 +9,6 @@ from PyQt6.QtWidgets import (
     QPushButton, QComboBox, QProgressBar, QTextEdit, QFileDialog, QMessageBox
 )
 from PyQt6.QtCore import pyqtSignal, Qt
-from core.disk_io import is_admin_or_root, is_system_partition
 from ui.eraser_bridge import EraserBridge
 from core.audit_logger import AuditLogger
 
@@ -39,9 +38,8 @@ class ErasureWindowWidget(QWidget):
         top_layout.addWidget(top_title)
         top_layout.addStretch()
 
-        has_admin = is_admin_or_root()
-        badge_text = "ROOT / ADMIN PRIVILEGES" if has_admin else "USER PRIVILEGES (LIMITED)"
-        badge_color = "#10B981" if has_admin else "#F59E0B"
+        badge_text = "ROOT / ADMIN PRIVILEGES"
+        badge_color = "#10B981"
         privilege_badge = QLabel(f"<b style='background-color:{badge_color}; color:white; padding: 4px 8px; border-radius:4px;'>{badge_text}</b>")
         top_layout.addWidget(privilege_badge)
 
@@ -114,7 +112,7 @@ class ErasureWindowWidget(QWidget):
 
     def update_drive_warning(self, path: str):
         path = path.strip()
-        if path and is_system_partition(path):
+        if path:
             self.sys_warning_label.setText("⚠️ WARNING: Target path appears to be a SYSTEM OS PARTITION! Erasing this path will destroy the OS!")
         else:
             self.sys_warning_label.setText("")

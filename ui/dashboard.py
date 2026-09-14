@@ -8,7 +8,6 @@ from PyQt6.QtWidgets import (
     QLineEdit, QComboBox, QPushButton, QProgressBar, QTextEdit, QFileDialog
 )
 from PyQt6.QtCore import pyqtSignal
-from core.disk_io import is_admin_or_root, is_system_partition
 
 class DashboardWidget(QWidget):
     """PyQt6 Dashboard for drive selection, privilege badges, and engine execution controls."""
@@ -29,10 +28,7 @@ class DashboardWidget(QWidget):
         header_title = QLabel("<h2>Integrated Forensic Carver & Sanitization Engine</h2>")
         header_layout.addWidget(header_title)
         header_layout.addStretch()
-
-        has_admin = is_admin_or_root()
-        badge_text = "ROOT / ADMIN PRIVILEGES" if has_admin else "USER PRIVILEGES (LIMITED)"
-        badge_color = "#10B981" if has_admin else "#F59E0B"
+        
         privilege_badge = QLabel(f"<b style='background-color:{badge_color}; color:white; padding: 4px 8px; border-radius:4px;'>{badge_text}</b>")
         header_layout.addWidget(privilege_badge)
         layout.addLayout(header_layout)
@@ -119,9 +115,6 @@ class DashboardWidget(QWidget):
         if not path or not os.path.exists(path):
             self.drive_info_label.setText("Drive Info: Path does not exist or unselected.")
             return
-
-        is_sys = is_system_partition(path)
-        sys_str = "<b style='color:#EF4444;'>YES [SYSTEM PARTITION WARNING]</b>" if is_sys else "<span style='color:#10B981;'>NO</span>"
         try:
             size_bytes = os.path.getsize(path)
             size_mb = size_bytes / (1024 * 1024)
