@@ -1,23 +1,27 @@
 """
-SectorScanner: Carves raw volume sectors by parsing container atom/box 
-structures and file footers to determine exact file byte boundaries.
+SectorScanner: Cross-platform raw volume carver supporting Windows drive letters 
+and macOS/Linux BSD device nodes (/dev/rdiskX) with directory fallbacks.
 """
 
 import os
 import sys
 import hashlib
 import datetime
+import subprocess
 from typing import List, Dict, Any, Callable, Optional
 
 
 class SectorScanner:
-    """Carves raw storage volumes and accurately measures file boundaries."""
+    """Carves raw storage volumes and accurately measures file boundaries on Windows and macOS."""
 
     def __init__(self, target_input: str):
-        self.raw_path = self._format_raw_target(target_input)
+        self.original_target = target_input.strip()
+        self.raw_path = self._format_raw_target(self.original_target)
 
     def _format_raw_target(self, target: str) -> str:
         target = target.strip()
+        
+        # Windows formatting
         if sys.platform == "win32":
             if os.path.isfile(target) or target.startswith("\\\\.\\"):
                 return target
@@ -25,10 +29,32 @@ class SectorScanner:
             drive_letter = drive.rstrip(":").strip("\\").strip("/")
             if drive_letter and len(drive_letter) == 1 and drive_letter.isalpha():
                 return f"\\\\.\\{drive_letter.upper()}:"
+            return target
+
+        # macOS / Linux formatting
+        if sys.platform == "darwin" or sys.platform.startswith("linux"):
+            if target.startswith("/dev/"):
+                if target.startswith("/dev/disk"):
+                    return target.replace("/dev/disk", "/dev/rdisk")
+                return target
+
+            # Resolve mounted volume path (e.g. /Volumes/USB) to raw device node (/dev/rdiskX)
+            if os.path.exists(target):
+                try:
+                    res = subprocess.run(["df", "-P", target], capture_output=True, text=True)
+                    lines = res.stdout.strip().split("\n")
+                    if len(lines) >= 2:
+                        dev_node = lines[1].split()[0]
+                        if dev_node.startswith("/dev/disk"):
+                            return dev_node.replace("/dev/disk", "/dev/rdisk")
+                        elif dev_node.startswith("/dev/"):
+                            return dev_node
+                except Exception:
+                    pass
+
         return target
 
     def _calculate_exact_length(self, data: bytes, start_pos: int, ftype: str) -> int:
-        """Parses file signatures, footers, or container metadata to return exact size."""
         total_len = len(data)
 
         if ftype == "png":
@@ -53,11 +79,10 @@ class SectorScanner:
                 box_size = int.from_bytes(data[offset : offset + 4], "big")
                 box_type = data[offset + 4 : offset + 8]
 
-                # Validate printable ASCII FourCC box type
                 if not all(32 <= b <= 126 for b in box_type):
                     break
 
-                if box_size == 1:  # 64-bit extended box size
+                if box_size == 1:
                     if offset + 16 > total_len:
                         break
                     box_size = int.from_bytes(data[offset + 8 : offset + 16], "big")
@@ -69,7 +94,7 @@ class SectorScanner:
                     break
 
                 offset += box_size
-                if offset - start_pos > 1024 * 1024 * 1024:  # 1GB safety limit
+                if offset - start_pos > 1024 * 1024 * 1024:
                     break
 
             parsed_len = offset - start_pos
@@ -81,7 +106,6 @@ class SectorScanner:
             if eof != -1:
                 return (eof + 5) - start_pos
 
-        # Fallback safety size if container footer is missing or truncated
         return 5 * 1024 * 1024
 
     def scan(
@@ -89,10 +113,14 @@ class SectorScanner:
         recursive: bool = True, 
         progress_callback: Optional[Callable[[float], None]] = None
     ) -> List[Dict[str, Any]]:
-        carved_artifacts = []
         if not self.raw_path:
             raise ValueError("Invalid target drive letter or path.")
 
+        # If target path is a standard directory and not mapped to raw block device, walk directory
+        if os.path.isdir(self.raw_path) and not self.raw_path.startswith("/dev/"):
+            return self._scan_directory_tree(self.raw_path, progress_callback)
+
+        carved_artifacts = []
         signatures = {
             "png": {"header": b"\x89PNG\r\n\x1a\n", "category": "Images"},
             "jpeg": {"header": b"\xff\xd8\xff", "category": "Images"},
@@ -155,15 +183,56 @@ class SectorScanner:
                     if progress_callback and total_bytes > 0:
                         progress_callback(min(100.0, (bytes_processed / total_bytes) * 100.0))
 
-        except PermissionError:
+        except (PermissionError, IsADirectoryError):
+            if os.path.isdir(self.original_target):
+                return self._scan_directory_tree(self.original_target, progress_callback)
             raise PermissionError(
-                f"Access Denied on '{self.raw_path}'.\nRun VS Code/Terminal as Administrator."
+                f"Access Denied on '{self.raw_path}'.\nRun terminal with root privileges (sudo python main.py) and grant Full Disk Access."
             )
         except Exception:
             if os.path.isfile(self.raw_path):
                 return self._scan_disk_image_file(self.raw_path, progress_callback)
+            elif os.path.isdir(self.original_target):
+                return self._scan_directory_tree(self.original_target, progress_callback)
 
         return carved_artifacts
+
+    def _scan_directory_tree(self, dir_path: str, progress_callback) -> List[Dict[str, Any]]:
+        """Scans standard file system trees when direct sector access is unavailable."""
+        artifacts = []
+        all_files = []
+        for root, _, files in os.walk(dir_path):
+            for file in files:
+                all_files.append(os.path.join(root, file))
+
+        total = len(all_files)
+        for idx, file_path in enumerate(all_files):
+            try:
+                size = os.path.getsize(file_path)
+                ext = file_path.split(".")[-1].lower() if "." in file_path else "bin"
+                rel_path = os.path.relpath(file_path, dir_path)
+                mtime = os.path.getmtime(file_path)
+                date_str = datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+
+                artifacts.append({
+                    "source_file": file_path,
+                    "original_name": os.path.basename(file_path),
+                    "relative_path": rel_path,
+                    "type": ext,
+                    "offset": 0,
+                    "size_bytes": size,
+                    "timestamp": mtime,
+                    "date_str": date_str,
+                    "sha256": "FS_ENTRY",
+                    "status": "Ready for Extraction"
+                })
+            except Exception:
+                continue
+
+            if progress_callback and total > 0:
+                progress_callback(min(100.0, ((idx + 1) / total) * 100.0))
+
+        return artifacts
 
     def _scan_disk_image_file(self, image_path: str, progress_callback) -> List[Dict[str, Any]]:
         carved_artifacts = []
